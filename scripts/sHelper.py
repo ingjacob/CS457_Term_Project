@@ -155,13 +155,12 @@ class Message:
                 if reqhdr not in self.jsonheader:
                     raise ValueError(f'Missing required header "{reqhdr}".')
 
-    # TODO: ADD COMMENTS TO / EDIT THIS FUNCTION AND THE NEXT
     def process_request(self):
         content_len = self.jsonheader["content-length"]
         if not len(self._recv_buffer) >= content_len:
             return
-        data = self._recv_buffer[:content_len]
-        self._recv_buffer = self._recv_buffer[content_len:]
+        data = self._recv_buffer[:content_len] # Get the content
+        self._recv_buffer = self._recv_buffer[content_len:] # Remove the content from the buffer
         if self.jsonheader["content-type"] == "text/json":
             encoding = self.jsonheader["content-encoding"]
             self.request = self._json_decode(data, encoding)
@@ -173,7 +172,7 @@ class Message:
                 f'received {self.jsonheader["content-type"]} request from',
                 self.addr,
             )
-        # Set selector to listen for write events, we're done reading.
+        # Set selector to listen for write events
         self._set_selector_events_mask("w")
 
     def create_response(self):
@@ -182,9 +181,9 @@ class Message:
         else:
             # Binary or unknown content-type
             response = self._create_response_binary_content()
-        message = self._create_message(**response)
-        self.response_created = True
-        self._send_buffer += message
+        message = self._create_message(**response) # Package response with appropriate headers
+        self.response_created = True # Update state
+        self._send_buffer += message # Add response to buffer
 
     def close(self):
         # Log and clean up socket
