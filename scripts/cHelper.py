@@ -16,6 +16,11 @@ class Message:
         self._jsonheader_len = None
         self.jsonheader = None
         self.response = None
+        self.closing = False
+        self.waiting = False
+
+    def set_req(self, request):
+        self.request = request
 
     def _set_selector_events_mask(self, mode):
         # Set selector to listen for events: mode is 'r', 'w', or 'rw'
@@ -29,70 +34,10 @@ class Message:
             raise ValueError(f"Invalid events mask mode {repr(mode)}.")
         self.selector.modify(self.sock, events, data=self)
 
-    def _read(self):
-        try:
-            # Read from the socket
-            data = self.sock.recv(4096)
-        except BlockingIOError:
-            # Resource temporarily unavailable (errno EWOULDBLOCK)
-            pass
-        else:
-            if data:
-                self._recv_buffer += data
-            else:
-                raise RuntimeError("Peer closed.")
-
-    def _write(self):
-        if self._send_buffer:
-            # Log data send attempt
-            print("sending", repr(self._send_buffer), "to", self.addr)
-            try:
-                # Write to the socket
-                sent = self.sock.send(self._send_buffer)
-            except BlockingIOError:
-                # Resource temporarily unavailable (errno EWOULDBLOCK)
-                pass
-            else:
-                self._send_buffer = self._send_buffer[sent:]
-
-    def _json_encode(self, obj, encoding):
-        # Use encoding to turn JSON header into bytes
-        return json.dumps(obj, ensure_ascii=False).encode(encoding)
-
-    def _json_decode(self, json_bytes, encoding):
-        # Use encoding to unpack JSON header
-        tiow = io.TextIOWrapper(io.BytesIO(json_bytes), encoding=encoding, newline="")
-        obj = json.load(tiow)
-        tiow.close()
-        return obj
-
-    def _create_message(self, *, content_bytes, content_type, content_encoding):
-        # Setup header format
-        jsonheader = {
-            "byteorder": sys.byteorder,
-            "content-type": content_type,
-            "content-encoding": content_encoding,
-            "content-length": len(content_bytes),
-        }
-        jsonheader_bytes = self._json_encode(jsonheader, "utf-8") # Call encode function to create header content
-        message_hdr = struct.pack(">H", len(jsonheader_bytes)) # Use pack() to turn the header length into bytes
-        message = message_hdr + jsonheader_bytes + content_bytes # Concatenate message with header length and content
-        return message
-
-    def _process_response_json_content(self):
-        # Print the response from the server
-        content = self.response
-        result = content.get("result")
-        print(f"got result: {result}")
-
-    def _process_response_binary_content(self):
-        # Print the response from the server
-        content = self.response
-        print(f"got response: {repr(content)}")
-
     def process_events(self, mask):
-        if mask & selectors.EVENT_READ:
+        if mask & selectors.EVENT_READ or mask & (selectors.EVENT_READ | selectors.EVENT_WRITE):
             self.read()
+        #if mask & selectors.EVENT_WRITE or mask & (selectors.EVENT_READ | selectors.EVENT_WRITE):
         if mask & selectors.EVENT_WRITE:
             self.write()
 
@@ -112,40 +57,22 @@ class Message:
             if self.response is None:
                 self.process_response()
 
-    def write(self):
-        if not self._request_queued:
-            self.queue_request()
+        self._jsonheader_len = None
+        self.jsonheader = None
+        self.waiting = False
 
-        # Attempt to write from buffer to socket
-        self._write()
-
-        if self._request_queued:
-            if not self._send_buffer:
-                # Set selector to listen for read events, we're done writing.
-                self._set_selector_events_mask("r")
-
-    def queue_request(self):
-        # Set up variables for sending
-        content = self.request["content"]
-        content_type = self.request["type"]
-        content_encoding = self.request["encoding"]
-
-        # Check for JSON content
-        if content_type == "text/json":
-            req = {
-                "content_bytes": self._json_encode(content, content_encoding),
-                "content_type": content_type,
-                "content_encoding": content_encoding,
-            }
+    def _read(self):
+        try:
+            # Read from the socket
+            data = self.sock.recv(4096)
+        except BlockingIOError:
+            # Resource temporarily unavailable (errno EWOULDBLOCK)
+            pass
         else:
-            req = {
-                "content_bytes": content,
-                "content_type": content_type,
-                "content_encoding": content_encoding,
-            }
-        message = self._create_message(**req) # Package request with appropriate headers
-        self._send_buffer += message # Add request to buffer
-        self._request_queued = True # Update state
+            if data:
+                self._recv_buffer += data
+            else:
+                raise RuntimeError("Peer closed.")
 
     # First part of header (2 bytes) contains the length of the JSON header
     def process_protoheader(self):
@@ -184,8 +111,108 @@ class Message:
                 self.addr,
             )
             self._process_response_binary_content()
-        # Close when response has been processed
-        self.close()
+
+        self.response = None
+
+        # After reading and processing, listen for write events
+        self._set_selector_events_mask("rw")
+        if self.waiting == True: self._set_selector_events_mask("r")
+        #if self.waiting: self._set_selector_events_mask("rw")
+
+        # Shut down when triggered
+        if self.closing:
+            self.close()
+
+    def _process_response_json_content(self):
+        # Print the response from the server
+        content = self.response
+        result = content.get("result")
+        chat = content.get("chat")
+        print(f"got result: {result}")
+        if chat: print(f"got chat: {chat}")
+        if content.get("exit") == "Confirmed Exit":
+            self.closing = True
+        if content.get("join") == 'Waiting':
+            self.waiting = True
+
+    def _process_response_binary_content(self):
+        # Print the response from the server
+        content = self.response
+        print(f"got response: {repr(content)}")
+
+    def write(self):
+        if not self._request_queued:
+            self.queue_request()
+
+        # Attempt to write from buffer to socket
+        self._write()
+
+        if self._request_queued:
+            if not self._send_buffer:
+                # Set selector to listen for read events, we're done writing.
+                self._set_selector_events_mask("r")
+
+        self._request_queued = False # Update state
+
+    def queue_request(self):
+        # Set up variables for sending
+        content = self.request["content"]
+        content_type = self.request["type"]
+        content_encoding = self.request["encoding"]
+
+        # Check for JSON content
+        if content_type == "text/json":
+            req = {
+                "content_bytes": self._json_encode(content, content_encoding),
+                "content_type": content_type,
+                "content_encoding": content_encoding,
+            }
+        else:
+            req = {
+                "content_bytes": content,
+                "content_type": content_type,
+                "content_encoding": content_encoding,
+            }
+        message = self._create_message(**req) # Package request with appropriate headers
+        self._send_buffer += message # Add request to buffer
+        self._request_queued = True # Update state
+
+    def _create_message(self, *, content_bytes, content_type, content_encoding):
+        # Setup header format
+        jsonheader = {
+            "byteorder": sys.byteorder,
+            "content-type": content_type,
+            "content-encoding": content_encoding,
+            "content-length": len(content_bytes),
+        }
+        jsonheader_bytes = self._json_encode(jsonheader, "utf-8") # Call encode function to create header content
+        message_hdr = struct.pack(">H", len(jsonheader_bytes)) # Use pack() to turn the header length into bytes
+        message = message_hdr + jsonheader_bytes + content_bytes # Concatenate message with header length and content
+        return message
+
+    def _write(self):
+        if self._send_buffer:
+            # Log data send attempt
+            print("sending", repr(self._send_buffer), "to", self.addr)
+            try:
+                # Write to the socket
+                sent = self.sock.send(self._send_buffer)
+            except BlockingIOError:
+                # Resource temporarily unavailable (errno EWOULDBLOCK)
+                pass
+            else:
+                self._send_buffer = self._send_buffer[sent:]
+
+    def _json_encode(self, obj, encoding):
+        # Use encoding to turn JSON header into bytes
+        return json.dumps(obj, ensure_ascii=False).encode(encoding)
+
+    def _json_decode(self, json_bytes, encoding):
+        # Use encoding to unpack JSON header
+        tiow = io.TextIOWrapper(io.BytesIO(json_bytes), encoding=encoding, newline="")
+        obj = json.load(tiow)
+        tiow.close()
+        return obj
 
     def close(self):
         # Log and clean up socket
