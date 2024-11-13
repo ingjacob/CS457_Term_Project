@@ -6,6 +6,7 @@ import traceback
 import sHelper
 
 sel = selectors.DefaultSelector()
+gameList = {0:'Empty'}
 
 # Handle incorrect number of command-line arguments
 if len(sys.argv) != 3:
@@ -19,7 +20,7 @@ def accept_wrapper(sock):
     conn.setblocking(False)
 
     # Create message object and wait for read event
-    message = sHelper.Message(sel, conn, addr)
+    message = sHelper.Message(sel, conn, addr, gameList)
     sel.register(conn, selectors.EVENT_READ, data=message)
 
 # Initialize host IP and port number, then create TCP socket
@@ -36,6 +37,9 @@ print("listening on", (host, port))
 lsock.setblocking(False)
 sel.register(lsock, selectors.EVENT_READ, data=None)
 
+# Information to send to opponent
+updateOpp = {}
+
 # Loop to keep server running
 try:
     while True:
@@ -45,8 +49,22 @@ try:
                 accept_wrapper(key.fileobj)
             else:
                 message = key.data
+                '''
+                if updateOpp and message.clientID == gameList[updateOpp.get("ID")]: 
+                    del updateOpp["ID"]
+                    send = message._create_message(**updateOpp)
+                    message.response_created = True
+                    message._send_buffer += send
+                    message.write()
+                '''
                 try:
-                    message.process_events(mask)
+                    updateOpp = message.process_events(mask)
+                    #if updateOpp:
+                    if updateOpp and not type(gameList.get(updateOpp.get('ID'))) is dict and not gameList.get(updateOpp.get('ID')).sock == None:
+                        opponent = gameList.get(updateOpp.get('ID'))
+                        del updateOpp['ID']
+                        opponent.write_update(updateOpp)
+                        updateOpp = {}
                 except Exception:
                     # Log exception and kill connection
                     print(
