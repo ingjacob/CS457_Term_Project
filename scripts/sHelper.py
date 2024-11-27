@@ -19,7 +19,7 @@ class Message:
         self.connected = False
         self.updateOpp = {}
         self.clientID = None
-        self.gameData = []
+        self.gameState = [[0,0,0],[0,0,0],[0,0,0]]
         for g in list(gameList):
             if gameList[g] == 'Empty': 
                 self.clientID = g
@@ -31,6 +31,34 @@ class Message:
                 gameList[g] = temp
                 self.connected = True
                 gameList[g].connected = True
+
+    def process_move(self, move):
+        if len(move) < 3: return False
+        try:
+            row = int(move[0])
+            column = int(move[2])
+        except ValueError:
+            return False
+        if row > 2 or column > 2: return False
+        if self.gameState[row][column] == 1 or self.gameState[row][column] == 2: return False
+        else: self.gameState[row][column] = 1
+        return True
+
+    def check_win(self):
+        # Check Rows
+        if self.gameState[0][0] == 1 and self.gameState[0][1] == 1 and self.gameState[0][2] == 1: return 'win'
+        if self.gameState[1][0] == 1 and self.gameState[1][1] == 1 and self.gameState[1][2] == 1: return 'win'
+        if self.gameState[2][0] == 1 and self.gameState[2][1] == 1 and self.gameState[2][2] == 1: return 'win'
+        # Check Columns
+        if self.gameState[0][0] == 1 and self.gameState[1][0] == 1 and self.gameState[2][0] == 1: return 'win'
+        if self.gameState[0][1] == 1 and self.gameState[1][1] == 1 and self.gameState[2][1] == 1: return 'win'
+        if self.gameState[0][2] == 1 and self.gameState[1][2] == 1 and self.gameState[2][2] == 1: return 'win'
+        # Check Diagonals
+        if self.gameState[0][0] == 1 and self.gameState[1][1] == 1 and self.gameState[2][2] == 1: return 'win'
+        if self.gameState[0][2] == 1 and self.gameState[1][1] == 1 and self.gameState[2][0] == 1: return 'win'
+        # Check Tie
+        if not 0 in self.gameState[0] and not 0 in self.gameState[1] and not 0 in self.gameState[2]: return 'tie'
+        return 'none'
     
     def _set_selector_events_mask(self, mode):
         # Set selector to listen for 'r', 'w', or 'rw'
@@ -154,18 +182,28 @@ class Message:
         if action == "join":
             mssge = self.request.get("value")
             if self.connected == True: 
-                content = {"join": "Success","result": mssge}
-                self.updateOpp = {'join': 'Success', 'ID': self.clientID}
+                content = {"join": "Success","result": 'Second'}
+                self.updateOpp = {'join': 'Success','result':'First','ID': self.clientID}
             else: content = {"join": "Waiting","result": mssge}
         elif action == "move":
             mssge = self.request.get("value")
-            content = {"result": mssge}
+            validMove = self.process_move(mssge)
+            if validMove:
+                win = self.check_win()
+                if win == 'win':
+                    content = {"result": 'youWin!'}
+                    self.updateOpp = {'result': 'oppWin!','ID': self.clientID}
+                elif win == 'tie':
+                    content = {'result': 'tie'}
+                    self.updateOpp = {'result': 'tie','ID': self.clientID}
+                else:
+                    content = {"result": 'moveSuccess'}
+                    self.updateOpp = {'result': 'oppMove','move': mssge,'ID': self.clientID}
+            else: content = {'result': 'moveFail'}
         elif action == "chat":
             mssge = self.request.get("value")
-            if self.connected == True:
-                content = {"result": mssge}
-                self.updateOpp = {'chat': mssge, 'ID': self.clientID}
-            else: content = {"result": "Cannot chat until game begins"}
+            content = {"result": mssge}
+            self.updateOpp = {'chat': mssge, 'ID': self.clientID}
         elif action == "quit":
             mssge = self.request.get("value")
             content = {"exit": "Confirmed Exit","result": mssge}

@@ -18,6 +18,7 @@ class Message:
         self.response = None
         self.closing = False
         self.waiting = False
+        self.gameState = [[0,0,0],[0,0,0],[0,0,0]]
 
     def set_req(self, request):
         self.request = request
@@ -35,11 +36,11 @@ class Message:
         self.selector.modify(self.sock, events, data=self)
 
     def process_events(self, mask):
+        if mask & selectors.EVENT_WRITE:
+            self.write()
         if mask & selectors.EVENT_READ or mask & (selectors.EVENT_READ | selectors.EVENT_WRITE):
             self.read()
         #if mask & selectors.EVENT_WRITE or mask & (selectors.EVENT_READ | selectors.EVENT_WRITE):
-        if mask & selectors.EVENT_WRITE:
-            self.write()
 
     def read(self):
         # Try to read from socket into buffer
@@ -59,7 +60,7 @@ class Message:
 
         self._jsonheader_len = None
         self.jsonheader = None
-        self.waiting = False
+        #self.waiting = False
 
     def _read(self):
         try:
@@ -101,7 +102,7 @@ class Message:
         if self.jsonheader["content-type"] == "text/json":
             encoding = self.jsonheader["content-encoding"]
             self.response = self._json_decode(data, encoding)
-            print("received response", repr(self.response), "from", self.addr)
+            print("received response", repr(self.response), "from", self.addr)   # TESTING
             self._process_response_json_content()
         else:
             # Binary or unknown content-type
@@ -116,7 +117,7 @@ class Message:
 
         # After reading and processing, listen for write events
         self._set_selector_events_mask("rw")
-        if self.waiting == True: self._set_selector_events_mask("r")
+        #if self.waiting == True: self._set_selector_events_mask("r")
         #if self.waiting: self._set_selector_events_mask("rw")
 
         # Shut down when triggered
@@ -128,12 +129,23 @@ class Message:
         content = self.response
         result = content.get("result")
         chat = content.get("chat")
-        print(f"got result: {result}")
+        print(f"got result: {result}") # TESTING
         if chat: print(f"got chat: {chat}")
         if content.get("exit") == "Confirmed Exit":
             self.closing = True
         if content.get("join") == 'Waiting':
             self.waiting = True
+        if content.get("join") == 'Success' and result == 'First':
+            self.waiting = False
+        if content.get('join') == 'Success' and result == 'Second':
+            self.waiting = True
+        if content.get('result') == 'oppMove':
+            self.waiting = False
+        if content.get('result') == 'moveSuccess':
+            self.waiting = True
+        if content.get('exit') == 'Opponent Exited':
+            print('Opponent Exited, closing connection')
+            self.closing = True
 
     def _process_response_binary_content(self):
         # Print the response from the server
@@ -141,6 +153,7 @@ class Message:
         print(f"got response: {repr(content)}")
 
     def write(self):
+        if self.waiting: return
         if not self._request_queued:
             self.queue_request()
 
@@ -193,7 +206,7 @@ class Message:
     def _write(self):
         if self._send_buffer:
             # Log data send attempt
-            print("sending", repr(self._send_buffer), "to", self.addr)
+            print("sending", repr(self._send_buffer), "to", self.addr) # TESTING
             try:
                 # Write to the socket
                 sent = self.sock.send(self._send_buffer)

@@ -73,9 +73,10 @@ try:
         for key, mask in events:
             message = key.data
             if mask & selectors.EVENT_WRITE:
-                action = input("Action: ")
-                value = input("Value: ")
-                message.set_req(create_request(action,value))
+                if message.waiting == False:
+                    action = input("Action: ")
+                    value = input("Value: ")
+                    message.set_req(create_request(action,value))
             try:
                 message.process_events(mask)
             except Exception:

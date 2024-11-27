@@ -49,14 +49,6 @@ try:
                 accept_wrapper(key.fileobj)
             else:
                 message = key.data
-                '''
-                if updateOpp and message.clientID == gameList[updateOpp.get("ID")]: 
-                    del updateOpp["ID"]
-                    send = message._create_message(**updateOpp)
-                    message.response_created = True
-                    message._send_buffer += send
-                    message.write()
-                '''
                 try:
                     updateOpp = message.process_events(mask)
                     #if updateOpp:
