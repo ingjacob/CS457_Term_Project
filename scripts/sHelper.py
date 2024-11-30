@@ -32,33 +32,20 @@ class Message:
                 self.connected = True
                 gameList[g].connected = True
 
-    def process_move(self, move):
-        if len(move) < 3: return False
-        try:
-            row = int(move[0])
-            column = int(move[2])
+    def process_move(self, move, value):
+        try: moveInt = int(move)
         except ValueError:
             return False
-        if row > 2 or column > 2: return False
+        if not (moveInt >= 0 and moveInt <=9): return False
+        if moveInt - 3 < 1: row = 0
+        elif moveInt - 6 < 1: row = 1
+        else: row = 2
+        if moveInt % 3 == 1: column = 0
+        elif moveInt % 3 == 2: column = 1
+        else: column = 2
         if self.gameState[row][column] == 1 or self.gameState[row][column] == 2: return False
-        else: self.gameState[row][column] = 1
+        else: self.gameState[row][column] = value
         return True
-
-    def check_win(self):
-        # Check Rows
-        if self.gameState[0][0] == 1 and self.gameState[0][1] == 1 and self.gameState[0][2] == 1: return 'win'
-        if self.gameState[1][0] == 1 and self.gameState[1][1] == 1 and self.gameState[1][2] == 1: return 'win'
-        if self.gameState[2][0] == 1 and self.gameState[2][1] == 1 and self.gameState[2][2] == 1: return 'win'
-        # Check Columns
-        if self.gameState[0][0] == 1 and self.gameState[1][0] == 1 and self.gameState[2][0] == 1: return 'win'
-        if self.gameState[0][1] == 1 and self.gameState[1][1] == 1 and self.gameState[2][1] == 1: return 'win'
-        if self.gameState[0][2] == 1 and self.gameState[1][2] == 1 and self.gameState[2][2] == 1: return 'win'
-        # Check Diagonals
-        if self.gameState[0][0] == 1 and self.gameState[1][1] == 1 and self.gameState[2][2] == 1: return 'win'
-        if self.gameState[0][2] == 1 and self.gameState[1][1] == 1 and self.gameState[2][0] == 1: return 'win'
-        # Check Tie
-        if not 0 in self.gameState[0] and not 0 in self.gameState[1] and not 0 in self.gameState[2]: return 'tie'
-        return 'none'
     
     def _set_selector_events_mask(self, mode):
         # Set selector to listen for 'r', 'w', or 'rw'
@@ -187,8 +174,9 @@ class Message:
             else: content = {"join": "Waiting","result": mssge}
         elif action == "move":
             mssge = self.request.get("value")
-            validMove = self.process_move(mssge)
+            validMove = self.process_move(mssge, 1)
             if validMove:
+                '''
                 win = self.check_win()
                 if win == 'win':
                     content = {"result": 'youWin!'}
@@ -197,8 +185,11 @@ class Message:
                     content = {'result': 'tie'}
                     self.updateOpp = {'result': 'tie','ID': self.clientID}
                 else:
-                    content = {"result": 'moveSuccess'}
+                    content = {"result": 'moveSuccess','move': mssge}
                     self.updateOpp = {'result': 'oppMove','move': mssge,'ID': self.clientID}
+                '''
+                content = {"result": 'moveSuccess','move': mssge}
+                self.updateOpp = {'result': 'oppMove','move': mssge,'ID': self.clientID}
             else: content = {'result': 'moveFail'}
         elif action == "chat":
             mssge = self.request.get("value")
@@ -261,6 +252,7 @@ class Message:
                     self.close()
 
     def write_update(self, content):
+        if content.get('result') == 'oppMove': self.process_move(content.get('move'), 2)
         self._set_selector_events_mask("w")
         response = {
             "content_bytes": self._json_encode(content, "utf-8"),
