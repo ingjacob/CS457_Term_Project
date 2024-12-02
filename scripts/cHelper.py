@@ -19,6 +19,7 @@ class Message:
         self.closing = False
         self.waiting = False
         self.winResult = None
+        self.newChat = None
         self.gameState = [['1','2','3'],['4','5','6'],['7','8','9']]
 
     def process_move(self, move, value):
@@ -36,20 +37,24 @@ class Message:
         else: self.gameState[row][column] = value
         return True
 
-    def check_win(self):
+    def check_win(self, check):
         # Check Rows
-        if self.gameState[0][0] == 'X' and self.gameState[0][1] == 'X' and self.gameState[0][2] == 'X': return 'win'
-        if self.gameState[1][0] == 'X' and self.gameState[1][1] == 'X' and self.gameState[1][2] == 'X': return 'win'
-        if self.gameState[2][0] == 'X' and self.gameState[2][1] == 'X' and self.gameState[2][2] == 'X': return 'win'
+        if self.gameState[0][0] == check and self.gameState[0][1] == check and self.gameState[0][2] == check: return 'win'
+        if self.gameState[1][0] == check and self.gameState[1][1] == check and self.gameState[1][2] == check: return 'win'
+        if self.gameState[2][0] == check and self.gameState[2][1] == check and self.gameState[2][2] == check: return 'win'
         # Check Columns
-        if self.gameState[0][0] == 'X' and self.gameState[1][0] == 'X' and self.gameState[2][0] == 'X': return 'win'
-        if self.gameState[0][1] == 'X' and self.gameState[1][1] == 'X' and self.gameState[2][1] == 'X': return 'win'
-        if self.gameState[0][2] == 'X' and self.gameState[1][2] == 'X' and self.gameState[2][2] == 'X': return 'win'
+        if self.gameState[0][0] == check and self.gameState[1][0] == check and self.gameState[2][0] == check: return 'win'
+        if self.gameState[0][1] == check and self.gameState[1][1] == check and self.gameState[2][1] == check: return 'win'
+        if self.gameState[0][2] == check and self.gameState[1][2] == check and self.gameState[2][2] == check: return 'win'
         # Check Diagonals
-        if self.gameState[0][0] == 'X' and self.gameState[1][1] == 'X' and self.gameState[2][2] == 'X': return 'win'
-        if self.gameState[0][2] == 'X' and self.gameState[1][1] == 'X' and self.gameState[2][0] == 'X': return 'win'
+        if self.gameState[0][0] == check and self.gameState[1][1] == check and self.gameState[2][2] == check: return 'win'
+        if self.gameState[0][2] == check and self.gameState[1][1] == check and self.gameState[2][0] == check: return 'win'
         # Check Tie
-        if not 0 in self.gameState[0] and not 0 in self.gameState[1] and not 0 in self.gameState[2]: return 'tie'
+        tieBool = True
+        for i in self.gameState:
+            for j in i:
+                if not j == 'X' and not j == 'O': tieBool = False
+        if tieBool: return 'tie'
         return None
 
     def set_req(self, request):
@@ -72,7 +77,9 @@ class Message:
             self.write()
         if mask & selectors.EVENT_READ or mask & (selectors.EVENT_READ | selectors.EVENT_WRITE):
             self.read()
-        return self.gameState, self.winResult
+        temp = self.newChat
+        self.newChat = None
+        return self.gameState, self.winResult, temp
 
     def read(self):
         # Try to read from socket into buffer
@@ -134,7 +141,7 @@ class Message:
         if self.jsonheader["content-type"] == "text/json":
             encoding = self.jsonheader["content-encoding"]
             self.response = self._json_decode(data, encoding)
-            print("received response", repr(self.response), "from", self.addr)   # TESTING
+            #print("received response", repr(self.response), "from", self.addr)   # TESTING
             self._process_response_json_content()
         else:
             # Binary or unknown content-type
@@ -161,8 +168,10 @@ class Message:
         content = self.response
         result = content.get("result")
         chat = content.get("chat")
-        print(f"got result: {result}") # TESTING
-        if chat: print(f"got chat: {chat}")
+        #print(f"got result: {result}") # TESTING
+        #if chat: print(f"got chat: {chat}")
+        if chat:
+            self.newChat = chat
         if content.get("exit") == "Confirmed Exit":
             self.closing = True
         if content.get("join") == 'Waiting':
@@ -174,9 +183,14 @@ class Message:
         if content.get('result') == 'oppMove':
             self.waiting = False
             self.process_move(content.get('move'), 'O')
+            temp = self.check_win('O')
+            if temp: self.winResult = 'opp' + temp
+        if content.get('result') == 'gameOver':
+            self.winResult = content.get('gameResult')
         if content.get('result') == 'moveSuccess':
             self.waiting = True
             self.process_move(content.get('move'), 'X')
+            self.winResult = self.check_win('X')
         if content.get('exit') == 'Opponent Exited':
             print('Opponent Exited, closing connection')
             self.closing = True
@@ -240,7 +254,7 @@ class Message:
     def _write(self):
         if self._send_buffer:
             # Log data send attempt
-            print("sending", repr(self._send_buffer), "to", self.addr) # TESTING
+            #print("sending", repr(self._send_buffer), "to", self.addr) # TESTING
             try:
                 # Write to the socket
                 sent = self.sock.send(self._send_buffer)

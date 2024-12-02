@@ -59,7 +59,7 @@ class Message:
             raise ValueError(f"Invalid events mask mode {repr(mode)}.")
         self.selector.modify(self.sock, events, data=self)
 
-    def process_events(self, mask):      
+    def process_events(self, mask):
         if mask & selectors.EVENT_READ:
             self.read()
         if mask & selectors.EVENT_WRITE:
@@ -176,18 +176,6 @@ class Message:
             mssge = self.request.get("value")
             validMove = self.process_move(mssge, 1)
             if validMove:
-                '''
-                win = self.check_win()
-                if win == 'win':
-                    content = {"result": 'youWin!'}
-                    self.updateOpp = {'result': 'oppWin!','ID': self.clientID}
-                elif win == 'tie':
-                    content = {'result': 'tie'}
-                    self.updateOpp = {'result': 'tie','ID': self.clientID}
-                else:
-                    content = {"result": 'moveSuccess','move': mssge}
-                    self.updateOpp = {'result': 'oppMove','move': mssge,'ID': self.clientID}
-                '''
                 content = {"result": 'moveSuccess','move': mssge}
                 self.updateOpp = {'result': 'oppMove','move': mssge,'ID': self.clientID}
             else: content = {'result': 'moveFail'}
