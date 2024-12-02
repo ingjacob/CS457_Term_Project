@@ -20,13 +20,14 @@ class Message:
         self.waiting = False
         self.winResult = None
         self.newChat = None
+        self.invalidMove = False
         self.gameState = [['1','2','3'],['4','5','6'],['7','8','9']]
 
     def process_move(self, move, value):
         try: moveInt = int(move)
         except ValueError:
             return False
-        if not (moveInt >= 0 and moveInt <=9): return False
+        if not (moveInt >= 1 and moveInt <=9): return False
         if moveInt - 3 < 1: row = 0
         elif moveInt - 6 < 1: row = 1
         else: row = 2
@@ -144,13 +145,7 @@ class Message:
             #print("received response", repr(self.response), "from", self.addr)   # TESTING
             self._process_response_json_content()
         else:
-            # Binary or unknown content-type
-            self.response = data
-            print(
-                f'received {self.jsonheader["content-type"]} response from',
-                self.addr,
-            )
-            self._process_response_binary_content()
+            print('Unknown content type')
 
         self.response = None
 
@@ -185,6 +180,8 @@ class Message:
             self.process_move(content.get('move'), 'O')
             temp = self.check_win('O')
             if temp: self.winResult = 'opp' + temp
+        if content.get('result') == 'moveFail':
+            self.invalidMove = True
         if content.get('result') == 'gameOver':
             self.winResult = content.get('gameResult')
         if content.get('result') == 'moveSuccess':
@@ -195,10 +192,12 @@ class Message:
             print('Opponent Exited, closing connection')
             self.closing = True
 
+    '''
     def _process_response_binary_content(self):
         # Print the response from the server
         content = self.response
         print(f"got response: {repr(content)}")
+    '''
 
     def write(self):
         if self.waiting: return
@@ -214,6 +213,7 @@ class Message:
                 self._set_selector_events_mask("r")
 
         self._request_queued = False # Update state
+        self.request = None
 
     def queue_request(self):
         # Set up variables for sending

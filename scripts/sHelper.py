@@ -36,7 +36,7 @@ class Message:
         try: moveInt = int(move)
         except ValueError:
             return False
-        if not (moveInt >= 0 and moveInt <=9): return False
+        if not (moveInt >= 1 and moveInt <=9): return False
         if moveInt - 3 < 1: row = 0
         elif moveInt - 6 < 1: row = 1
         else: row = 2
@@ -128,12 +128,7 @@ class Message:
             self.request = self._json_decode(data, encoding)
             print("received request", repr(self.request), "from", self.addr)
         else:
-            # Binary or unknown content-type
-            self.request = data
-            print(
-                f'received {self.jsonheader["content-type"]} request from',
-                self.addr,
-            )
+            print('Unknown content type')
         # Set selector to listen for write events
         #self._set_selector_events_mask("rw")
         self._set_selector_events_mask("w")
@@ -156,8 +151,7 @@ class Message:
         if self.jsonheader["content-type"] == "text/json":
             response = self._create_response_json_content()
         else:
-            # Binary or unknown content-type
-            response = self._create_response_binary_content()
+            print('Unknown content type')
         message = self._create_message(**response) # Package response with appropriate headers
         self.response_created = True # Update state
         self._send_buffer += message # Add response to buffer
@@ -187,7 +181,7 @@ class Message:
             mssge = self.request.get("value")
             content = {"exit": "Confirmed Exit","result": mssge}
             self.closing = True
-            if self.connected == True: self.updateOpp = {'exit': 'Opponent Exited', 'ID': self.clientID}
+            if self.connected == True and not mssge == 'gameOver': self.updateOpp = {'exit': 'Opponent Exited', 'ID': self.clientID}
         else:
             content = {"result": f'Error: invalid action "{action}".'}
         content_encoding = "utf-8"
@@ -195,16 +189,6 @@ class Message:
             "content_bytes": self._json_encode(content, content_encoding),
             "content_type": "text/json",
             "content_encoding": content_encoding
-        }
-        return response
-
-    def _create_response_binary_content(self):
-        # For binary content repeat message back
-        retVal = b"Request received by server: " + self.request
-        response = {
-            "content_bytes": retVal,
-            "content_type": "binary/custom-server-binary-type",
-            "content_encoding": "binary",
         }
         return response
 
@@ -241,6 +225,7 @@ class Message:
 
     def write_update(self, content):
         if content.get('result') == 'oppMove': self.process_move(content.get('move'), 2)
+        if content.get('exit') == 'Opponent Exited': self.closing = True
         self._set_selector_events_mask("w")
         response = {
             "content_bytes": self._json_encode(content, "utf-8"),
