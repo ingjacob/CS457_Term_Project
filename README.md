@@ -12,3 +12,5 @@ This is a simple Tic-Tac-Toe game implemented using Python and sockets.
 **Technologies used:**
 * Python
 * Sockets
+
+**Security/Risk Evaluation:** This code does not currently have any protection against any cyber attack. It is vulnerable to breaches of Confidentiality, Integrity, and Availability. In future iterations of this program the Confidentiality vulnerability can be addressed by implementing encryption. The Integrity vulnerability could be addressed by including message checksums. The Availability vulnerability could be addressed by the use of multiple server stations, which would make DOS attacks much more difficult.
