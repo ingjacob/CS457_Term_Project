@@ -32,6 +32,7 @@ class Message:
                 self.connected = True
                 gameList[g].connected = True
 
+    # Check if move is valid and update game state with move
     def process_move(self, move, value):
         try: moveInt = int(move)
         except ValueError:
@@ -59,6 +60,7 @@ class Message:
             raise ValueError(f"Invalid events mask mode {repr(mode)}.")
         self.selector.modify(self.sock, events, data=self)
 
+    # Handle new read or write events, return opponent updates to driver code
     def process_events(self, mask):
         if mask & selectors.EVENT_READ:
             self.read()
@@ -84,6 +86,7 @@ class Message:
             if self.request is None:
                 self.process_request()
 
+        # Reset variable after use
         self._jsonheader_len = None
 
     def _read(self):
@@ -129,8 +132,8 @@ class Message:
             print("received request", repr(self.request), "from", self.addr)
         else:
             print('Unknown content type')
+
         # Set selector to listen for write events
-        #self._set_selector_events_mask("rw")
         self._set_selector_events_mask("w")
 
     def write(self):
@@ -142,7 +145,7 @@ class Message:
         # Attempt to write from buffer to socket
         self._write()
 
-        # Update states
+        # Reset variables after use
         self.response_created = False
         self.jsonheader = None
         self.request = None
@@ -157,15 +160,18 @@ class Message:
         self._send_buffer += message # Add response to buffer
 
     def _create_response_json_content(self):
-        # Determine desired action and respond accordingly
         action = self.request.get("action")
         content_encoding = "utf-8"
+
+        # Handle client join
         if action == "join":
             mssge = self.request.get("value")
             if self.connected == True: 
                 content = {"join": "Success","result": 'Second'}
                 self.updateOpp = {'join': 'Success','result':'First','ID': self.clientID}
             else: content = {"join": "Waiting","result": mssge}
+
+        # Handle client move
         elif action == "move":
             mssge = self.request.get("value")
             validMove = self.process_move(mssge, 1)
@@ -173,10 +179,14 @@ class Message:
                 content = {"result": 'moveSuccess','move': mssge}
                 self.updateOpp = {'result': 'oppMove','move': mssge,'ID': self.clientID}
             else: content = {'result': 'moveFail'}
+
+        # Handle chat message
         elif action == "chat":
             mssge = self.request.get("value")
             content = {"result": mssge}
             self.updateOpp = {'chat': mssge, 'ID': self.clientID}
+
+        # Handle quit
         elif action == "quit":
             mssge = self.request.get("value")
             content = {"exit": "Confirmed Exit","result": mssge}
@@ -218,11 +228,11 @@ class Message:
                 self._send_buffer = self._send_buffer[sent:]
                 # Close when the buffer is drained after successful send() call(s)
                 if sent and not self._send_buffer:
-                    #self._set_selector_events_mask("rw")
                     self._set_selector_events_mask("r")
                 if self.closing:
                     self.close()
 
+    # Handle the forwarding of opponent updates
     def write_update(self, content):
         if content.get('result') == 'oppMove': self.process_move(content.get('move'), 2)
         if content.get('exit') == 'Opponent Exited': self.closing = True

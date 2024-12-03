@@ -4,10 +4,18 @@ import selectors
 import traceback
 import struct
 import os
+import argparse
 
 import cHelper
 
+# Create selector object to control socket connection
 sel = selectors.DefaultSelector()
+
+# Create argparse object to parse the IP Address and Port Number
+parser = argparse.ArgumentParser()
+parser.add_argument('-i', '--ip', required=True)
+parser.add_argument('-p', '--port', type=int, required=True)
+args = parser.parse_args()
 
 # Use arguments to generate request content
 def create_request(action, value, username):
@@ -25,9 +33,6 @@ def create_request(action, value, username):
         )
     else:
         return None
-    
-def create_error(action):
-    return 'Invalid command: ' + action + '\nValid actions: chat, move, quit'
 
 def start_connection(host, port):
     # Initialize host IP and port number, then create TCP socket
@@ -48,6 +53,7 @@ def start_connection(host, port):
         ))
     sel.register(sock, events, data=message)
 
+# Print function to show chat, board, and any error messages
 def show_board(state, status, chatLog, username, error):
     os.system('clear')
     print('Username: ' + username)
@@ -61,6 +67,7 @@ def show_board(state, status, chatLog, username, error):
     if error:
         print(error)
     
+# Check if the game is over
 def handleWin(winChecker):
     if winChecker == 'win':
         return 'You win'
@@ -70,17 +77,11 @@ def handleWin(winChecker):
         return 'Tie game'
     return 'Continue'
 
-# Handle incorrect number of command-line arguments
-if len(sys.argv) != 3:
-    print("Incorrect number of arguments, usage:", sys.argv[0], "<host> <port>")
-    sys.exit(1)
-
 # Initialize necessary variables
-host, port = sys.argv[1], int(sys.argv[2])
+host, port = args.ip, args.port
 printBool, startBool, exitBool = False, True, True
 chatLog = ''
-winChecker = None
-errorMessage = None
+winChecker, errorMessage = None, None
 
 # Get client username
 username = input("Please enter a username to connect: ")
@@ -113,37 +114,50 @@ try:
         for key, mask in events:
             message = key.data
             if mask & selectors.EVENT_WRITE:
+                # If game has just started wait for opponent to connect, or for opponent to make the first move
                 if startBool:
                     os.system('clear')
                     print("Username: " + username)
                     print("---Waiting for opponent---")
                     print(chatLog)
                     startBool = False
+                # If it is currently this user's turn
                 if not message.waiting:
+                    # Loop until valid request is received
                     while not request:
+                        # Handle invalid move
                         if message.invalidMove:
                             errorMessage = 'Invalid move, please enter a value 1-9 that has not already been played'
                             message.invalidMove = False
                         show_board(gameState,"---Your turn---",chatLog,username,errorMessage)
+
+                        # Get action and value from user
                         action = input("Action: ")
                         value = input("Value: ")
                         if action == "chat":
+                            # Update chatlog with user's message
                             chatLog += username + ': ' + value + '\n'
                         request = create_request(action,value,username)
                         if request:
                             message.set_req(request)
                             errorMessage = None
                         else:
-                            errorMessage = create_error(action)
+                            errorMessage = 'Invalid command: ' + action + '\nValid actions: chat, move, quit'
                         printBool = True
+                # If it is not currently this user's turn
                 if message.waiting and printBool:
                     show_board(gameState,"---Opponent's turn---",chatLog,username,errorMessage)
                     printBool = False
             try:
+                # Process any read or write events
                 gameState, winChecker, newChat = message.process_events(mask)
+
+                # Update chatlog with opponent's message
                 if newChat:
                     chatLog += newChat + '\n'
                     printBool = True
+
+                # Check for game end and handle end of game
                 temp = handleWin(winChecker)
                 if not temp == 'Continue':
                     exitBool = False

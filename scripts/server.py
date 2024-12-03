@@ -2,16 +2,18 @@ import sys
 import socket
 import selectors
 import traceback
+import argparse
 
 import sHelper
 
+# Create selector object to control socket connection
 sel = selectors.DefaultSelector()
-gameList = {0:'Empty'}
 
-# Handle incorrect number of command-line arguments
-if len(sys.argv) != 3:
-    print("Incorrect number of arguments, usage:", sys.argv[0], "<host> <port>")
-    sys.exit(1)
+# Create argparse object to parse the Port Number
+parser = argparse.ArgumentParser()
+parser.add_argument('-p', '--port', type=int, required=True)
+args = parser.parse_args()
+gameList = {0:'Empty'}
 
 def accept_wrapper(sock):
     # Accept the incoming client connection
@@ -23,8 +25,8 @@ def accept_wrapper(sock):
     message = sHelper.Message(sel, conn, addr, gameList)
     sel.register(conn, selectors.EVENT_READ, data=message)
 
-# Initialize host IP and port number, then create TCP socket
-host, port = sys.argv[1], int(sys.argv[2])
+# Initialize listening IP and port number, then create TCP socket
+host, port = '0.0.0.0', args.port
 lsock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
 # Use REUSEADDR to avoid bind() exception: OSError: [Errno 48] Address already in use
@@ -50,8 +52,10 @@ try:
             else:
                 message = key.data
                 try:
+                    # Process any read or write events
                     updateOpp = message.process_events(mask)
-                    #if updateOpp:
+
+                    # Update opponent if user is connected to one
                     if updateOpp and not type(gameList.get(updateOpp.get('ID'))) is dict and not gameList.get(updateOpp.get('ID')).sock == None:
                         opponent = gameList.get(updateOpp.get('ID'))
                         del updateOpp['ID']

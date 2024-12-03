@@ -23,6 +23,7 @@ class Message:
         self.invalidMove = False
         self.gameState = [['1','2','3'],['4','5','6'],['7','8','9']]
 
+    # Check if move is valid and update game state with move
     def process_move(self, move, value):
         try: moveInt = int(move)
         except ValueError:
@@ -58,6 +59,7 @@ class Message:
         if tieBool: return 'tie'
         return None
 
+    # Update request with new content
     def set_req(self, request):
         self.request = request
 
@@ -73,6 +75,7 @@ class Message:
             raise ValueError(f"Invalid events mask mode {repr(mode)}.")
         self.selector.modify(self.sock, events, data=self)
 
+    # Handle new read or write events, return server updates to driver code
     def process_events(self, mask):
         if mask & selectors.EVENT_WRITE:
             self.write()
@@ -98,9 +101,9 @@ class Message:
             if self.response is None:
                 self.process_response()
 
+        # Reset variables after use
         self._jsonheader_len = None
         self.jsonheader = None
-        #self.waiting = False
 
     def _read(self):
         try:
@@ -142,7 +145,6 @@ class Message:
         if self.jsonheader["content-type"] == "text/json":
             encoding = self.jsonheader["content-encoding"]
             self.response = self._json_decode(data, encoding)
-            #print("received response", repr(self.response), "from", self.addr)   # TESTING
             self._process_response_json_content()
         else:
             print('Unknown content type')
@@ -151,53 +153,50 @@ class Message:
 
         # After reading and processing, listen for write events
         self._set_selector_events_mask("rw")
-        #if self.waiting == True: self._set_selector_events_mask("r")
-        #if self.waiting: self._set_selector_events_mask("rw")
 
         # Shut down when triggered
         if self.closing:
             self.close()
 
     def _process_response_json_content(self):
-        # Print the response from the server
+        # Fetch the response from the server
         content = self.response
         result = content.get("result")
         chat = content.get("chat")
-        #print(f"got result: {result}") # TESTING
-        #if chat: print(f"got chat: {chat}")
         if chat:
             self.newChat = chat
-        if content.get("exit") == "Confirmed Exit":
-            self.closing = True
+
+        # Handle join information from server
         if content.get("join") == 'Waiting':
             self.waiting = True
         if content.get("join") == 'Success' and result == 'First':
             self.waiting = False
         if content.get('join') == 'Success' and result == 'Second':
             self.waiting = True
-        if content.get('result') == 'oppMove':
+
+        # Handle move information from server
+        if result == 'oppMove':
             self.waiting = False
             self.process_move(content.get('move'), 'O')
             temp = self.check_win('O')
             if temp: self.winResult = 'opp' + temp
-        if content.get('result') == 'moveFail':
+        if result == 'moveFail':
             self.invalidMove = True
-        if content.get('result') == 'gameOver':
-            self.winResult = content.get('gameResult')
-        if content.get('result') == 'moveSuccess':
+        if result == 'moveSuccess':
             self.waiting = True
             self.process_move(content.get('move'), 'X')
             self.winResult = self.check_win('X')
+
+        # Handle game end information from server
+        if result == 'gameOver':
+            self.winResult = content.get('gameResult')
+
+        # Handle exit information from server
+        if content.get("exit") == "Confirmed Exit":
+            self.closing = True
         if content.get('exit') == 'Opponent Exited':
             print('Opponent Exited, closing connection')
             self.closing = True
-
-    '''
-    def _process_response_binary_content(self):
-        # Print the response from the server
-        content = self.response
-        print(f"got response: {repr(content)}")
-    '''
 
     def write(self):
         if self.waiting: return
@@ -212,7 +211,8 @@ class Message:
                 # Set selector to listen for read events, we're done writing.
                 self._set_selector_events_mask("r")
 
-        self._request_queued = False # Update state
+        # Reset variables after use
+        self._request_queued = False
         self.request = None
 
     def queue_request(self):
@@ -225,12 +225,6 @@ class Message:
         if content_type == "text/json":
             req = {
                 "content_bytes": self._json_encode(content, content_encoding),
-                "content_type": content_type,
-                "content_encoding": content_encoding,
-            }
-        else:
-            req = {
-                "content_bytes": content,
                 "content_type": content_type,
                 "content_encoding": content_encoding,
             }
@@ -254,7 +248,6 @@ class Message:
     def _write(self):
         if self._send_buffer:
             # Log data send attempt
-            #print("sending", repr(self._send_buffer), "to", self.addr) # TESTING
             try:
                 # Write to the socket
                 sent = self.sock.send(self._send_buffer)
